@@ -1,0 +1,56 @@
+name: Build Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Unzip project
+        run: |
+          ZIP=$(find . -iname '*PlateHunter*.zip' | head -n 1)
+          echo "Found: $ZIP"
+          unzip -q "$ZIP" -d /tmp/proj
+
+      - name: Fix JVM target
+        run: |
+          F=/tmp/proj/PlateHunterAndroid_work/app/build.gradle.kts
+          grep -q "VERSION_17" "$F" || cat >> "$F" <<'EOF'
+
+          android {
+              compileOptions {
+                  sourceCompatibility = JavaVersion.VERSION_17
+                  targetCompatibility = JavaVersion.VERSION_17
+              }
+          }
+          EOF
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Accept SDK licenses and install packages
+        run: |
+          SDKM=$(find "$ANDROID_HOME" /usr/local/lib/android -name sdkmanager -type f 2>/dev/null | head -n 1)
+          yes | "$SDKM" --licenses > /dev/null || true
+          "$SDKM" "platforms;android-35" "build-tools;35.0.0"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Build debug APK
+        working-directory: /tmp/proj/PlateHunterAndroid_work
+        run: gradle --no-daemon assembleDebug
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PlateHunter-debug-apk
+          path: /tmp/proj/PlateHunterAndroid_work/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
